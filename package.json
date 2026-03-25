@@ -1,0 +1,133 @@
+{
+  "name": "kooboo_sync_manager",
+  "version": "2.0.4",
+  "description": "Kooboo项目同步工具 - 支持命令行和桌面应用",
+  "author": "Kooboo Ninjible Team",
+  "main": "electron/main.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "kooboo-init": "dist/cli/init.js",
+    "kooboo-fix": "dist/cli/fix.js",
+    "kooboo-pull": "dist/cli/pull.js",
+    "kooboo-push": "dist/cli/push.js",
+    "kooboo-site-pull": "dist/cli/site-pull.js",
+    "kooboo-site-push": "dist/cli/site-push.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "init": "ts-node src/init-command.ts init",
+    "fix": "ts-node src/index.ts fix",
+    "pull": "ts-node src/index.ts pull",
+    "push": "ts-node src/index.ts push",
+    "site-pull": "ts-node src/index.ts site-pull",
+    "site-push": "ts-node src/index.ts site-push",
+    "pull:dev": "ts-node src/index.ts pull dev",
+    "pull:acc": "ts-node src/index.ts pull acc",
+    "pull:prod": "ts-node src/index.ts pull prod",
+    "push:dev": "ts-node src/index.ts push dev",
+    "push:acc": "ts-node src/index.ts push acc",
+    "push:prod": "ts-node src/index.ts push prod",
+    "fix:dev": "ts-node src/index.ts fix dev",
+    "fix:acc": "ts-node src/index.ts fix acc",
+    "fix:prod": "ts-node src/index.ts fix prod",
+    "k-init": "kooboo-init",
+    "k-fix": "kooboo-fix",
+    "k-pull": "kooboo-pull",
+    "k-push": "kooboo-push",
+    "k-site-pull": "kooboo-site-pull",
+    "k-site-push": "kooboo-site-push",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "electron:build": "pnpm run electron:build:win",
+    "electron:build:win": "tsc && vite build && electron-builder --win",
+    "electron:build:mac": "tsc && vite build && electron-builder --mac",
+    "electron:build:mac:x64": "tsc && vite build && electron-builder --mac --x64",
+    "electron:build:mac:arm64": "tsc && vite build && electron-builder --mac --arm64",
+    "electron:build:mac:universal": "tsc && vite build && electron-builder --mac --universal",
+    "electron:build:mac:unsigned": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false tsc && vite build && electron-builder --mac",
+    "electron:clean": "rimraf release dist dist-electron",
+    "app:build": "pnpm run electron:build:win"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "dotenv": "^16.4.7",
+    "element-plus": "^2.13.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "autoprefixer": "10.4.17",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "postcss": "8.4.35",
+    "tailwindcss": "3.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "vite": "^5.0.0",
+    "wait-on": "^7.2.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "kooboo",
+    "sync",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hcx1002/kooboo_sync_manager.git"
+  },
+  "build": {
+    "appId": "com.kooboo.sync.manager",
+    "productName": "Kooboo Sync Manager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "electron/auy8u-d1mk8.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/sync.ico",
+      "artifactName": "${productName}-${version}-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kooboo Sync",
+      "perMachine": false,
+      "allowElevation": true
+    },
+    "extraMetadata": {
+      "main": "electron/main.js"
+    }
+  }
+}
