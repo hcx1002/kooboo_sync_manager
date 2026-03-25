@@ -1,6 +1,6 @@
 # Kooboo Sync Manager
 
-Kooboo Sync Manager 是基于 Kooboo Sync 开发出的 Kooboo 项目同步管理工具，支持命令行和 Electron 桌面应用两种使用方式。它用于把 Kooboo 站点代码与站点设置同步到本地目录，便于 Git 管理、协作开发和人工校验。
+Kooboo Sync Manager 是基于 Kooboo Sync 开发的 Kooboo 项目同步管理工具，支持命令行和 Electron 桌面应用两种使用方式。它用于把 Kooboo 站点代码与站点设置同步到本地目录，便于 Git 管理、协作开发和人工校验。
 
 ## 效果图
 
