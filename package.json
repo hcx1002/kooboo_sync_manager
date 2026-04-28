@@ -1,6 +1,6 @@
 {
   "name": "kooboo_sync_manager",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "Kooboo项目同步工具 - Electron 桌面应用",
   "author": "Kooboo Ninjible Team",
   "main": "electron/main.js",
@@ -21,6 +21,7 @@
     "@element-plus/icons-vue": "^2.3.2",
     "chokidar": "^4.0.3",
     "element-plus": "^2.13.0",
+    "readdirp": "^4.1.2",
     "vue": "^3.4.0",
     "vuedraggable": "^4.1.0"
   },
