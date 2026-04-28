@@ -32,6 +32,12 @@ let watcherPaused = 0;
 let autoPushTimer = null;
 let pendingTargets = new Map();
 let taskQueue = Promise.resolve();
+let quitPromise = null;
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+}
 
 function ensureAppDataDir() {
   const appDataRoot = path.dirname(APP_DATA_PATH);
@@ -270,6 +276,29 @@ async function stopWatcher(options = {}) {
       sendSyncLog('info', '自动上传已停止');
     }
   }
+}
+
+function quitApplication() {
+  if (quitPromise) {
+    return quitPromise;
+  }
+
+  quitPromise = (async () => {
+    await stopWatcher({ silent: true });
+
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.destroy();
+      }
+    }
+
+    app.quit();
+  })().catch(error => {
+    console.error('退出应用失败:', error);
+    app.exit(1);
+  });
+
+  return quitPromise;
 }
 
 function shouldIgnoreRelativePath(relativePath) {
@@ -533,23 +562,39 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  ensureAppDataDir();
-  createWindow();
+if (gotSingleInstanceLock) {
+  app.on('second-instance', () => {
+    if (!mainWindow) {
+      if (app.isReady()) {
+        createWindow();
+      }
+      return;
+    }
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  app.whenReady().then(() => {
+    ensureAppDataDir();
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      quitApplication();
     }
   });
-});
-
-app.on('window-all-closed', async () => {
-  await stopWatcher({ silent: true });
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+}
 
 ipcMain.handle('window-minimize', () => {
   mainWindow?.minimize();
@@ -568,7 +613,7 @@ ipcMain.handle('window-maximize', () => {
 });
 
 ipcMain.handle('window-close', () => {
-  mainWindow?.close();
+  return quitApplication();
 });
 
 ipcMain.handle('get-env-list', async () => {
