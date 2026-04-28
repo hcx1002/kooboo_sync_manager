@@ -25,10 +25,132 @@ export const readMetadata = <T>(metadataPath: string): T[] => {
   return [];
 };
 
+const invalidWindowsFileNameChars = /[<>:"/\\|?*\x00-\x1F]/g;
+const invalidWindowsFileNameCharsTest = /[<>:"/\\|?*\x00-\x1F]/;
+const reservedWindowsFileName = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+const encodeFileNameChar = (char: string) => {
+  return Array.from(Buffer.from(char, 'utf-8'))
+    .map(byte => {
+      const hex = byte.toString(16).toUpperCase();
+      return `%${hex.length === 1 ? `0${hex}` : hex}`;
+    })
+    .join('');
+};
+
+export const sanitizeLocalName = (name: string): string => {
+  let safeName = name.replace(invalidWindowsFileNameChars, encodeFileNameChar);
+  safeName = safeName.replace(/[. ]+$/g, chars => Array.from(chars).map(encodeFileNameChar).join(''));
+
+  if (!safeName || safeName === '.' || safeName === '..') {
+    safeName = '_';
+  }
+
+  if (reservedWindowsFileName.test(safeName)) {
+    safeName = `%${safeName}`;
+  }
+
+  return safeName;
+};
+
+export const getLocalFileName = (item: Metadata, fileExtension = '') => {
+  return item.localFileName || `${item.name}${fileExtension}`;
+};
+
+export const getLocalFilePath = (modulePath: string, item: Metadata, fileExtension = '') => {
+  return path.join(modulePath, getLocalFileName(item, fileExtension));
+};
+
+const isSafeLocalFileName = (fileName: string) => {
+  if (!fileName || fileName !== path.win32.basename(fileName)) {
+    return false;
+  }
+
+  if (invalidWindowsFileNameCharsTest.test(fileName) || /[. ]$/.test(fileName)) {
+    return false;
+  }
+
+  return !reservedWindowsFileName.test(path.win32.parse(fileName).name);
+};
+
+const buildLocalFileName = (name: string, fileExtension = '') => {
+  return `${sanitizeLocalName(name)}${fileExtension}`;
+};
+
+const getCollisionToken = (item: Metadata) => {
+  return crypto
+    .createHash('sha1')
+    .update(item.id || item.name)
+    .digest('hex')
+    .slice(0, 8);
+};
+
+const makeUniqueLocalFileName = (
+  fileName: string,
+  item: Metadata,
+  usedFileNames: Set<string>,
+  fileExtension = ''
+) => {
+  const baseName = fileExtension && fileName.endsWith(fileExtension)
+    ? fileName.slice(0, -fileExtension.length)
+    : fileName;
+  const token = getCollisionToken(item);
+  let index = 0;
+
+  while (true) {
+    const suffix = index === 0 ? token : `${token}-${index}`;
+    const candidate = `${baseName}.${suffix}${fileExtension}`;
+
+    if (!usedFileNames.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+
+    index += 1;
+  }
+};
+
+export const assignLocalFileNames = (
+  data: Metadata[],
+  fileExtension = '',
+  previousData: Metadata[] = []
+) => {
+  const previousById = new Map(previousData.map(item => [item.id, item]));
+  const previousByName = new Map(previousData.map(item => [item.name, item]));
+  const usedFileNames = new Set<string>();
+
+  return data.map(item => {
+    const defaultFileName = `${item.name}${fileExtension}`;
+    const previousItemById = previousById.get(item.id);
+    const previousItem = previousItemById?.name === item.name
+      ? previousItemById
+      : previousByName.get(item.name);
+    const previousLocalFileName = previousItem?.localFileName;
+    const preferredFileName = previousLocalFileName || item.localFileName;
+    let localFileName = preferredFileName && isSafeLocalFileName(preferredFileName)
+      ? preferredFileName
+      : buildLocalFileName(item.name, fileExtension);
+
+    if (usedFileNames.has(localFileName.toLowerCase())) {
+      localFileName = makeUniqueLocalFileName(localFileName, item, usedFileNames, fileExtension);
+    }
+
+    usedFileNames.add(localFileName.toLowerCase());
+
+    const normalizedItem = { ...item };
+    if (localFileName !== defaultFileName || preferredFileName) {
+      normalizedItem.localFileName = localFileName;
+    } else {
+      delete normalizedItem.localFileName;
+    }
+
+    return normalizedItem;
+  });
+};
+
 // 更新元数据中的文件哈希值
 export const updateMetadataWithHash = (data: Metadata[], modulePath: string, fileExtension = '') => {
   return data.map(item => {
-    const filePath = path.join(modulePath, `${item.name}${fileExtension}`);
+    const filePath = getLocalFilePath(modulePath, item, fileExtension);
     if (fs.existsSync(filePath)) {
       return {
         ...item,
@@ -73,8 +195,7 @@ export const calculateDiff = (
     // 如果有config参数，则检查文件哈希
     if (config?.modulePath) {
       const oldFileHash = oldItem.fileHash || newItem.fileHash;
-      const fileName = oldItem.name || newItem.name;
-      const filePath = path.join(config.modulePath, `${fileName}${config.fileExtension || ''}`);
+      const filePath = getLocalFilePath(config.modulePath, newItem, config.fileExtension || '');
       const fileHash = fs.existsSync(filePath) ? calculateFileHash(filePath) : '';
       return oldFileHash !== fileHash;
     }

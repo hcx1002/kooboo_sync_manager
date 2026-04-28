@@ -1,7 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import { SYNC_CONFIG } from '../config/syncConfig';
-import { readMetadata, updateMetadataWithHash, calculateDiff, emptyGuid } from '../utils/syncUtils';
+import {
+  readMetadata,
+  updateMetadataWithHash,
+  calculateDiff,
+  emptyGuid,
+  assignLocalFileNames,
+  getLocalFileName,
+  getLocalFilePath
+} from '../utils/syncUtils';
 import * as api from '../api/code';
 import * as layout from '../api/layout';
 import * as page from '../api/page';
@@ -262,8 +270,15 @@ export async function pull(moduleName: Module, force = false) {
   }
 
   const metadataPath = path.join(modulePath, getMetadataFileName());
-  const localMetadata = readMetadata<Metadata>(metadataPath);
-  const remoteData = assertMetadataList(moduleName, await API_MAP.getList[moduleName]());
+  const localMetadata = assignLocalFileNames(
+    readMetadata<Metadata>(metadataPath),
+    config.fileExtension
+  );
+  const remoteData = assignLocalFileNames(
+    assertMetadataList(moduleName, await API_MAP.getList[moduleName]()),
+    config.fileExtension,
+    localMetadata
+  );
 
   const diff = calculateDiff(localMetadata, remoteData, {
     modulePath,
@@ -281,38 +296,39 @@ export async function pull(moduleName: Module, force = false) {
   }
 
   for (const item of diff.removed) {
-    const filePath = path.join(modulePath, `${item.name}${config.fileExtension}`);
+    const localFileName = getLocalFileName(item, config.fileExtension);
+    const filePath = getLocalFilePath(modulePath, item, config.fileExtension);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      console.log(`删除本地文件: ${item.name}${config.fileExtension}`);
+      console.log(`删除本地文件: ${localFileName}`);
     } else {
-      console.log(`跳过删除不存在的文件: ${item.name}${config.fileExtension}`);
+      console.log(`跳过删除不存在的文件: ${localFileName}`);
     }
   }
 
   for (const item of diff.updated) {
     const code = await API_MAP.getEdit[moduleName](item.id);
     const content = getEditBody(moduleName, item.name, code);
-    fs.writeFileSync(path.join(modulePath, `${item.name}${config.fileExtension}`), content);
+    fs.writeFileSync(getLocalFilePath(modulePath, item, config.fileExtension), content);
   }
 
   for (const item of diff.added) {
     const code = await API_MAP.getEdit[moduleName](item.id);
     const content = getEditBody(moduleName, item.name, code);
-    fs.writeFileSync(path.join(modulePath, `${item.name}${config.fileExtension}`), content);
+    fs.writeFileSync(getLocalFilePath(modulePath, item, config.fileExtension), content);
   }
 
   if (force) {
     for (const item of diff.unchanged) {
       const code = await API_MAP.getEdit[moduleName](item.id);
       const content = getEditBody(moduleName, item.name, code);
-      fs.writeFileSync(path.join(modulePath, `${item.name}${config.fileExtension}`), content);
+      fs.writeFileSync(getLocalFilePath(modulePath, item, config.fileExtension), content);
     }
   }
 
   const localFiles = fs.readdirSync(modulePath)
     .filter(file => !file.startsWith('__metadata.') && !file.endsWith('.json') && (config.fileExtension ? file.endsWith(config.fileExtension) : true));
-  const koobooFiles = new Set(remoteData.map(item => `${item.name}${config.fileExtension}`));
+  const koobooFiles = new Set(remoteData.map(item => getLocalFileName(item, config.fileExtension)));
 
   for (const file of localFiles) {
     if (!koobooFiles.has(file)) {
@@ -338,8 +354,15 @@ export async function push(moduleName: Module, force = false) {
   const modulePath = path.join(KOOBOO_DIR, moduleName);
   const metadataPath = path.join(modulePath, getMetadataFileName());
 
-  const localMetadata = readMetadata<Metadata>(metadataPath);
-  const remoteData = assertMetadataList(moduleName, await API_MAP.getList[moduleName]());
+  const localMetadata = assignLocalFileNames(
+    readMetadata<Metadata>(metadataPath),
+    config.fileExtension
+  );
+  const remoteData = assignLocalFileNames(
+    assertMetadataList(moduleName, await API_MAP.getList[moduleName]()),
+    config.fileExtension,
+    localMetadata
+  );
 
   const diff = calculateDiff(remoteData, localMetadata, {
     modulePath,
@@ -362,7 +385,7 @@ export async function push(moduleName: Module, force = false) {
   }
 
   for (const item of diff.updated) {
-    const filePath = path.join(modulePath, `${item.name}${config.fileExtension}`);
+    const filePath = getLocalFilePath(modulePath, item, config.fileExtension);
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf-8');
       await API_MAP.update[moduleName]({
@@ -374,7 +397,7 @@ export async function push(moduleName: Module, force = false) {
   }
 
   for (const item of diff.added) {
-    const filePath = path.join(modulePath, `${item.name}${config.fileExtension}`);
+    const filePath = getLocalFilePath(modulePath, item, config.fileExtension);
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf-8');
       await API_MAP.create[moduleName]({
@@ -389,7 +412,7 @@ export async function push(moduleName: Module, force = false) {
 
   if (force) {
     for (const item of diff.unchanged) {
-      const filePath = path.join(modulePath, `${item.name}${config.fileExtension}`);
+      const filePath = getLocalFilePath(modulePath, item, config.fileExtension);
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf-8');
         await API_MAP.update[moduleName]({
@@ -401,7 +424,11 @@ export async function push(moduleName: Module, force = false) {
     }
   }
 
-  const updatedRemoteData = assertMetadataList(moduleName, await API_MAP.getList[moduleName]());
+  const updatedRemoteData = assignLocalFileNames(
+    assertMetadataList(moduleName, await API_MAP.getList[moduleName]()),
+    config.fileExtension,
+    localMetadata
+  );
   const updatedMetadata = updateMetadataWithHash(updatedRemoteData, modulePath, config.fileExtension);
   fs.writeFileSync(metadataPath, JSON.stringify(updatedMetadata, null, 2));
   console.log(`${moduleName} 模块推送完成`);
@@ -463,9 +490,13 @@ export function checkLocalCode(moduleName: Module): { valid: boolean; errors: st
     return { valid: false, errors: [`${metadataFileName} 文件不存在`] };
   }
 
-  const metadata = readMetadata<Metadata>(metadataPath);
+  const metadata = assignLocalFileNames(
+    readMetadata<Metadata>(metadataPath),
+    config.fileExtension
+  );
   const errors: string[] = [];
   const nameSet = new Set<string>();
+  const localFileNameSet = new Set<string>();
 
   for (const item of metadata) {
     if (nameSet.has(item.name)) {
@@ -476,15 +507,23 @@ export function checkLocalCode(moduleName: Module): { valid: boolean; errors: st
   }
 
   for (const item of metadata) {
-    const filePath = path.join(modulePath, `${item.name}${config.fileExtension}`);
+    const localFileName = getLocalFileName(item, config.fileExtension);
+    const localFileNameKey = localFileName.toLowerCase();
+    if (localFileNameSet.has(localFileNameKey)) {
+      errors.push(`本地文件名 ${localFileName} 冲突`);
+    } else {
+      localFileNameSet.add(localFileNameKey);
+    }
+
+    const filePath = getLocalFilePath(modulePath, item, config.fileExtension);
     if (!fs.existsSync(filePath)) {
-      errors.push(`文件 ${item.name}${config.fileExtension} 不存在`);
+      errors.push(`文件 ${localFileName} 不存在`);
     }
   }
 
   const localFiles = fs.readdirSync(modulePath)
     .filter(file => !file.startsWith('__metadata.') && !file.endsWith('.json') && (config.fileExtension ? file.endsWith(config.fileExtension) : true));
-  const metadataFiles = new Set(metadata.map(item => `${item.name}${config.fileExtension}`));
+  const metadataFiles = new Set(metadata.map(item => getLocalFileName(item, config.fileExtension)));
 
   for (const file of localFiles) {
     if (!metadataFiles.has(file)) {
@@ -540,16 +579,20 @@ export function fixLocalCode(moduleName: Module) {
 
   let metadata: Metadata[] = [];
   if (fs.existsSync(metadataPath)) {
-    metadata = readMetadata<Metadata>(metadataPath);
+    metadata = assignLocalFileNames(
+      readMetadata<Metadata>(metadataPath),
+      config.fileExtension
+    );
   }
 
-  const metadataFiles = new Set(metadata.map(item => `${item.name}${config.fileExtension}`));
+  const metadataFiles = new Set(metadata.map(item => getLocalFileName(item, config.fileExtension)));
 
   metadata = metadata.filter(item => {
-    const filePath = path.join(modulePath, `${item.name}${config.fileExtension}`);
+    const localFileName = getLocalFileName(item, config.fileExtension);
+    const filePath = getLocalFilePath(modulePath, item, config.fileExtension);
     const exists = Boolean(item.name) && fs.existsSync(filePath);
     if (!exists) {
-      console.log(`移除metadata记录: ${moduleName}/${item.name}${config.fileExtension}`);
+      console.log(`移除metadata记录: ${moduleName}/${localFileName}`);
     }
     return exists;
   });

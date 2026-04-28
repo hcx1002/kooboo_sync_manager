@@ -5,6 +5,20 @@ import path from 'path';
 
 const SITE_DIR_NAME = 'Site';
 const SITE_CONFIG_FILE_NAME = 'config.json';
+const UNO_CONFIG_FILE_NAME = 'uno.config.ts';
+
+const defaultUnoConfig = {
+  content: {
+    filesystem: [
+      '*.html',
+      '**/*.html'
+    ]
+  }
+};
+
+interface UnoConfigSource {
+  unocssSettings?: unknown;
+}
 
 const SiteInfoUpdateKeys = [
   "id",
@@ -99,6 +113,7 @@ export async function pushSettingsTask() {
   }
 
   const siteInfo = JSON.parse(fs.readFileSync(siteInfoPath, 'utf-8'));
+  writeUnoConfig(KOOBOO_DIR, siteInfo);
   const updateData: Record<string, unknown> = {};
   SiteInfoUpdateKeys.forEach(key => {
     if (siteInfo[key] !== undefined) {
@@ -107,6 +122,40 @@ export async function pushSettingsTask() {
   });
   await postSettings(updateData);
   console.log('Site信息已更新');
+}
+
+function parseUnoConfig(siteInfo: UnoConfigSource) {
+  const unocssSettings = siteInfo.unocssSettings;
+  if (!unocssSettings || typeof unocssSettings !== 'object' || Array.isArray(unocssSettings)) {
+    return {};
+  }
+
+  const config = (unocssSettings as { config?: unknown }).config;
+  if (typeof config !== 'string' || !config.trim()) {
+    return {};
+  }
+
+  try {
+    const parsedConfig = JSON.parse(config);
+    return parsedConfig && typeof parsedConfig === 'object' && !Array.isArray(parsedConfig)
+      ? parsedConfig
+      : {};
+  } catch (error) {
+    console.warn(`解析 unocssSettings.config 失败: ${error instanceof Error ? error.message : String(error)}`);
+    return {};
+  }
+}
+
+function writeUnoConfig(koobooDir: string, siteInfo: UnoConfigSource) {
+  const unoConfig = {
+    ...defaultUnoConfig,
+    ...parseUnoConfig(siteInfo)
+  };
+  const unoConfigPath = path.join(koobooDir, UNO_CONFIG_FILE_NAME);
+  const content = `export default ${JSON.stringify(unoConfig, null, 2)};\n`;
+
+  fs.writeFileSync(unoConfigPath, content);
+  console.log('UnoCSS配置已保存到', unoConfigPath);
 }
 
 export async function pullSettingTask() {
@@ -124,4 +173,5 @@ export async function pullSettingTask() {
     JSON.stringify(siteInfo, null, 2)
   );
   console.log('Site信息已保存到', siteInfoPath);
+  writeUnoConfig(KOOBOO_DIR, siteInfo);
 }

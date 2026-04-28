@@ -21,7 +21,8 @@
     "@element-plus/icons-vue": "^2.3.2",
     "chokidar": "^4.0.3",
     "element-plus": "^2.13.0",
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

@@ -4,8 +4,17 @@ const path = require('path');
 const fs = require('fs');
 
 const APP_DATA_PATH = path.join(app.getPath('userData'), 'environments');
+const ENV_ORDER_PATH = path.join(app.getPath('userData'), 'environment-order.json');
 const DEFAULT_SYNC_MODULES = 'Page,View,Layout,Api,Code,Style,Script,Label';
 const AUTO_PUSH_DEBOUNCE_MS = 1200;
+const DEV_CONFIG_TEMPLATE_DIR = path.join(__dirname, 'templates', 'dev-config');
+const DEV_CONFIG_FILES = [
+  'AGENTS.md',
+  'kooboo.project.d.ts',
+  'uno.config.ts',
+  'tsconfig.json',
+  'types.kooboo.d.ts'
+];
 
 const { pullTask } = require('../dist/pull');
 const { pushTask, pushModuleTask } = require('../dist/push');
@@ -25,6 +34,11 @@ let pendingTargets = new Map();
 let taskQueue = Promise.resolve();
 
 function ensureAppDataDir() {
+  const appDataRoot = path.dirname(APP_DATA_PATH);
+  if (!fs.existsSync(appDataRoot)) {
+    fs.mkdirSync(appDataRoot, { recursive: true });
+  }
+
   if (!fs.existsSync(APP_DATA_PATH)) {
     fs.mkdirSync(APP_DATA_PATH, { recursive: true });
   }
@@ -34,20 +48,142 @@ function getEnvConfigPath(envName) {
   return path.join(APP_DATA_PATH, `${envName}.json`);
 }
 
+function getEnvironmentNames() {
+  ensureAppDataDir();
+  return fs.readdirSync(APP_DATA_PATH)
+    .filter(fileName => fileName.endsWith('.json'))
+    .map(fileName => fileName.replace('.json', ''));
+}
+
+function readEnvironmentOrder() {
+  if (!fs.existsSync(ENV_ORDER_PATH)) {
+    return [];
+  }
+
+  try {
+    const order = JSON.parse(fs.readFileSync(ENV_ORDER_PATH, 'utf-8'));
+    return Array.isArray(order) ? order.filter(item => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeEnvironmentOrder(envNames) {
+  ensureAppDataDir();
+  fs.writeFileSync(ENV_ORDER_PATH, JSON.stringify(envNames, null, 2), 'utf-8');
+}
+
+function getOrderedEnvironmentNames() {
+  const names = getEnvironmentNames();
+  const existingNames = new Set(names);
+  const orderedNames = [];
+
+  for (const envName of readEnvironmentOrder()) {
+    if (existingNames.has(envName) && !orderedNames.includes(envName)) {
+      orderedNames.push(envName);
+    }
+  }
+
+  const remainingNames = names
+    .filter(envName => !orderedNames.includes(envName))
+    .sort((left, right) => left.localeCompare(right));
+
+  return [...orderedNames, ...remainingNames];
+}
+
+function saveEnvironmentOrder(envNames) {
+  const existingNames = new Set(getEnvironmentNames());
+  const orderedNames = [];
+
+  for (const envName of envNames) {
+    if (typeof envName === 'string' && existingNames.has(envName) && !orderedNames.includes(envName)) {
+      orderedNames.push(envName);
+    }
+  }
+
+  for (const envName of getOrderedEnvironmentNames()) {
+    if (!orderedNames.includes(envName)) {
+      orderedNames.push(envName);
+    }
+  }
+
+  writeEnvironmentOrder(orderedNames);
+  return orderedNames;
+}
+
+function getTargetFolderDisplay(config) {
+  const folderName = config.FOLDER_NAME || 'Kooboo';
+  const trimmedFolderName = folderName.replace(/[\\/]+$/g, '');
+  const displayName = path.basename(trimmedFolderName) || trimmedFolderName || 'Kooboo';
+
+  return {
+    targetFolderName: displayName,
+    targetFolderPath: resolveKoobooDir(config)
+  };
+}
+
+function getUniqueCopyName(baseName, existingNames) {
+  const copyBaseName = `${baseName}Copy-${Date.now().toString(36)}`;
+  let copyName = copyBaseName;
+  let index = 2;
+
+  while (existingNames.has(copyName)) {
+    copyName = `${copyBaseName}${index}`;
+    index += 1;
+  }
+
+  return copyName;
+}
+
+function cloneEnvironment(envName) {
+  const sourceConfig = readEnvConfigFile(envName);
+
+  if (!sourceConfig) {
+    throw new Error(`环境配置不存在: ${envName}`);
+  }
+
+  const existingNames = new Set(getEnvironmentNames());
+  const newEnvName = getUniqueCopyName(envName, existingNames);
+  const sourceLabel = sourceConfig.LABEL || envName.toUpperCase();
+  const newConfig = normalizeEnvConfig({
+    ...sourceConfig,
+    LABEL: `${sourceLabel} Copy`
+  });
+
+  fs.writeFileSync(getEnvConfigPath(newEnvName), JSON.stringify(newConfig, null, 2), 'utf-8');
+
+  const currentOrder = getOrderedEnvironmentNames().filter(name => name !== newEnvName);
+  const sourceIndex = currentOrder.indexOf(envName);
+  const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : currentOrder.length;
+  currentOrder.splice(insertIndex, 0, newEnvName);
+  writeEnvironmentOrder(currentOrder);
+
+  return {
+    name: newEnvName,
+    label: newConfig.LABEL,
+    ...getTargetFolderDisplay(newConfig)
+  };
+}
+
 function sendSyncLog(type, message) {
   mainWindow?.webContents.send('sync-log', { type, message });
 }
 
 function normalizeEnvConfig(config = {}) {
+  const apiBaseUrl = typeof config.API_BASE_URL === 'string'
+    ? config.API_BASE_URL.trim().replace(/\/+$/g, '')
+    : '';
+
   return {
     BASIC_AUTH_USER_NAME: '',
     BASIC_AUTH_PASSWORD: '',
-    API_BASE_URL: '',
+    API_BASE_URL: apiBaseUrl,
     SITE_ID: '',
     SYNC_MODULES: DEFAULT_SYNC_MODULES,
     FOLDER_NAME: 'Kooboo',
     AUTO_UPLOAD: false,
     ...config,
+    API_BASE_URL: apiBaseUrl,
     SYNC_MODULES: config.SYNC_MODULES || DEFAULT_SYNC_MODULES,
     AUTO_UPLOAD: Boolean(config.AUTO_UPLOAD)
   };
@@ -69,6 +205,41 @@ function resolveKoobooDir(config) {
   return config.FOLDER_NAME && path.isAbsolute(config.FOLDER_NAME)
     ? config.FOLDER_NAME
     : path.join(process.cwd(), config.FOLDER_NAME || 'Kooboo');
+}
+
+function initializeDevConfig(envName) {
+  const config = readEnvConfigFile(envName);
+
+  if (!config) {
+    throw new Error(`环境配置不存在: ${envName}`);
+  }
+
+  const targetDir = resolveKoobooDir(config);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const created = [];
+  const skipped = [];
+
+  for (const fileName of DEV_CONFIG_FILES) {
+    const sourcePath = path.join(DEV_CONFIG_TEMPLATE_DIR, fileName);
+    const targetPath = path.join(targetDir, fileName);
+
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error(`开发配置模板不存在: ${fileName}`);
+    }
+
+    if (fs.existsSync(targetPath)) {
+      skipped.push(fileName);
+      continue;
+    }
+
+    fs.writeFileSync(targetPath, fs.readFileSync(sourcePath));
+    created.push(fileName);
+  }
+
+  return { success: true, targetDir, created, skipped };
 }
 
 function getEnabledModules(config) {
@@ -110,7 +281,9 @@ function shouldIgnoreRelativePath(relativePath) {
   }
 
   if (
+    baseName === '__metadata.json' ||
     baseName.startsWith('__metadata.') ||
+    normalized.includes('/__metadata.json') ||
     normalized.includes('/__metadata.') ||
     normalized.startsWith('.git/') ||
     normalized.startsWith('node_modules/')
@@ -400,10 +573,7 @@ ipcMain.handle('window-close', () => {
 
 ipcMain.handle('get-env-list', async () => {
   ensureAppDataDir();
-  const files = fs.readdirSync(APP_DATA_PATH);
-  const envs = files
-    .filter(fileName => fileName.endsWith('.json'))
-    .map(fileName => fileName.replace('.json', ''));
+  const envs = getOrderedEnvironmentNames();
 
   return envs.map(name => {
     try {
@@ -411,13 +581,16 @@ ipcMain.handle('get-env-list', async () => {
       return {
         name,
         label: config.LABEL || name.toUpperCase(),
-        exists: true
+        exists: true,
+        ...getTargetFolderDisplay(config)
       };
     } catch {
       return {
         name,
         label: name.toUpperCase(),
-        exists: true
+        exists: true,
+        targetFolderName: 'Kooboo',
+        targetFolderPath: resolveKoobooDir(normalizeEnvConfig())
       };
     }
   });
@@ -449,6 +622,7 @@ ipcMain.handle('save-env-config', async (_event, envName, config) => {
     const normalizedConfig = normalizeEnvConfig(config);
 
     fs.writeFileSync(configPath, JSON.stringify(normalizedConfig, null, 2), 'utf-8');
+    saveEnvironmentOrder(getOrderedEnvironmentNames());
 
     if (envName === activeEnvName) {
       activeEnvConfig = normalizedConfig;
@@ -475,7 +649,31 @@ ipcMain.handle('delete-env-config', async (_event, envName) => {
       await stopWatcher({ silent: true });
     }
 
+    saveEnvironmentOrder(getOrderedEnvironmentNames().filter(name => name !== envName));
+
     return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('clone-env-config', async (_event, envName) => {
+  try {
+    return {
+      success: true,
+      data: cloneEnvironment(envName)
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('save-env-order', async (_event, envNames) => {
+  try {
+    return {
+      success: true,
+      order: saveEnvironmentOrder(Array.isArray(envNames) ? envNames : [])
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -491,6 +689,14 @@ ipcMain.handle('select-folder', async () => {
   }
 
   return { success: false };
+});
+
+ipcMain.handle('init-dev-config', async (_event, envName) => {
+  try {
+    return await enqueueTask(() => Promise.resolve(initializeDevConfig(envName)));
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('execute-pull', buildTaskHandler(force => pullTask(force)));

@@ -12,6 +12,7 @@ export enum Module {
 export interface Metadata {
   id: string;
   name: string;
+  localFileName?: string;
   lastModified?: string;
   fileHash?: string;
   [key: string]: any;

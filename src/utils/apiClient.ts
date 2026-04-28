@@ -168,10 +168,15 @@ class FetchClient {
 let cachedClient: FetchClient | null = null;
 let cachedEnv: string | null = null;
 
+function normalizeApiBaseUrl(apiBaseUrl: string) {
+  return apiBaseUrl.trim().replace(/\/+$/g, '');
+}
+
 export function createApiClient(): FetchClient {
   const { API_BASE_URL, BASIC_AUTH_USER_NAME, BASIC_AUTH_PASSWORD } = useEnv();
-  const apiFullUrl = `${API_BASE_URL}/_api/v2`;
-  const currentEnv = `${API_BASE_URL}-${BASIC_AUTH_USER_NAME}-${BASIC_AUTH_PASSWORD}`;
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(API_BASE_URL);
+  const apiFullUrl = `${normalizedApiBaseUrl}/_api/v2`;
+  const currentEnv = `${normalizedApiBaseUrl}-${BASIC_AUTH_USER_NAME}-${BASIC_AUTH_PASSWORD}`;
 
   if (cachedClient && cachedEnv === currentEnv) {
     return cachedClient;
@@ -207,7 +212,8 @@ export const apiClient = new Proxy({} as any, {
 
 export function useUrlSiteId(url: string) {
   const { API_BASE_URL, SITE_ID } = useEnv();
-  const urlObj = new URL(url, API_BASE_URL);
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(API_BASE_URL);
+  const urlObj = new URL(url, `${normalizedApiBaseUrl}/`);
   urlObj.searchParams.set('SiteId', SITE_ID);
-  return urlObj.toString().replace(API_BASE_URL, '');
+  return urlObj.toString().replace(normalizedApiBaseUrl, '');
 }

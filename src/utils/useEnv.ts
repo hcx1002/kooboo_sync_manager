@@ -46,10 +46,10 @@ export const getEnvironment = (): string => {
 };
 
 /**
- * 获取环境特定的元数据文件名
+ * 获取元数据文件名
  */
 export const getMetadataFileName = (): string => {
-  return `__metadata.${currentEnvironment}.json`;
+  return '__metadata.json';
 };
 
 export const useEnv = (): EnvConfig => {
