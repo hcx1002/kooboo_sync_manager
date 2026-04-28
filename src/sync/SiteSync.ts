@@ -3,6 +3,9 @@ import { get as getSettings, post as postSettings } from '../api/site';
 import fs from 'fs';
 import path from 'path';
 
+const SITE_DIR_NAME = 'Site';
+const SITE_CONFIG_FILE_NAME = 'config.json';
+
 const SiteInfoUpdateKeys = [
   "id",
   "organizationId",
@@ -89,14 +92,14 @@ const SiteInfoUpdateKeys = [
 
 export async function pushSettingsTask() {
   const { KOOBOO_DIR } = useEnv();
-  const siteInfoPath = path.join(KOOBOO_DIR, 'Data', '__metadata.json');
-  
+  const siteInfoPath = path.join(KOOBOO_DIR, SITE_DIR_NAME, SITE_CONFIG_FILE_NAME);
+
   if (!fs.existsSync(siteInfoPath)) {
-    throw new Error('Data/__metadata.json 文件不存在, 无法同步Site信息');
+    throw new Error(`${SITE_DIR_NAME}/${SITE_CONFIG_FILE_NAME} 文件不存在, 无法同步Site信息`);
   }
 
   const siteInfo = JSON.parse(fs.readFileSync(siteInfoPath, 'utf-8'));
-  const updateData = {};
+  const updateData: Record<string, unknown> = {};
   SiteInfoUpdateKeys.forEach(key => {
     if (siteInfo[key] !== undefined) {
       updateData[key] = siteInfo[key];
@@ -108,14 +111,14 @@ export async function pushSettingsTask() {
 
 export async function pullSettingTask() {
   const { KOOBOO_DIR } = useEnv();
-  const dataDir = path.join(KOOBOO_DIR, 'Data');
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+  const siteDir = path.join(KOOBOO_DIR, SITE_DIR_NAME);
+  if (!fs.existsSync(siteDir)) {
+    fs.mkdirSync(siteDir, { recursive: true });
   }
 
   const { site: siteInfo } = await getSettings();
-  const siteInfoPath = path.join(dataDir, '__metadata.json');
-  
+  const siteInfoPath = path.join(siteDir, SITE_CONFIG_FILE_NAME);
+
   fs.writeFileSync(
     siteInfoPath,
     JSON.stringify(siteInfo, null, 2)

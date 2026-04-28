@@ -21,5 +21,8 @@ export const SYNC_CONFIG = {
   },
   View: {
     fileExtension: '.html',
+  },
+  Label: {
+    fileExtension: '.json',
   }
 };

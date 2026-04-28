@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { useEnv } from './utils/useEnv';
 import { pull as pullFunctions } from './sync/genericSync';
+import { pullLabels } from './sync/labelSync';
 import { Module } from './types';
 
 export async function pullTask(force = false) {
@@ -19,7 +20,11 @@ export async function pullTask(force = false) {
     try {
       if (Object.keys(Module).includes(module)) {
         console.log(`正在拉取模块: ${module}...`);
-        await pullFunctions(module, force);
+        if (module === Module.Label) {
+          await pullLabels();
+        } else {
+          await pullFunctions(module, force);
+        }
         completedModules++;
         console.log(`模块 ${module} 拉取完成 (${completedModules}/${totalModules})`);
       } else {

@@ -125,11 +125,23 @@
           <!-- 操作按钮面板 -->
           <el-card shadow="never" class="flex-shrink-0">
             <template #header>
-              <div class="flex items-center gap-2">
-                <el-icon :size="20">
-                  <Operation />
-                </el-icon>
-                <span class="font-semibold">同步操作</span>
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-2">
+                  <el-icon :size="20">
+                    <Operation />
+                  </el-icon>
+                  <span class="font-semibold">同步操作</span>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <span class="text-sm text-gray-500">自动上传</span>
+                  <el-switch
+                    v-model="config.AUTO_UPLOAD"
+                    :disabled="!currentEnv"
+                    :loading="loadingStates.autoUpload"
+                    @change="updateAutoUpload"
+                  />
+                </div>
               </div>
             </template>
 
@@ -157,6 +169,16 @@
               <el-button type="warning" :icon="Tools" :loading="loadingStates.fix" :disabled="!currentEnv"
                 @click="executeFix">
                 修复目录
+              </el-button>
+
+              <el-button type="info" :icon="Download" :loading="loadingStates.sitePull" :disabled="!currentEnv"
+                @click="executeSitePull">
+                拉取站点配置
+              </el-button>
+
+              <el-button type="info" :icon="Upload" :loading="loadingStates.sitePush" :disabled="!currentEnv"
+                @click="executeSitePush" plain>
+                推送站点配置
               </el-button>
 
               <el-button type="info" :icon="Delete" @click="clearLogs" plain>
@@ -300,13 +322,15 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 const currentEnv = ref('');
 const appVersion = ref('');
 const environments = ref([]);
+const defaultSyncModules = 'Page,View,Layout,Api,Code,Style,Script,Label';
 const config = reactive({
   BASIC_AUTH_USER_NAME: '',
   BASIC_AUTH_PASSWORD: '',
   API_BASE_URL: '',
   SITE_ID: '',
-  SYNC_MODULES: 'Page,View,Layout,Api,Code,Style,Script',
-  FOLDER_NAME: 'Kooboo'
+  SYNC_MODULES: defaultSyncModules,
+  FOLDER_NAME: 'Kooboo',
+  AUTO_UPLOAD: false
 });
 
 const logs = ref([]);
@@ -329,11 +353,14 @@ const loadingStates = reactive({
   forcePull: false,
   push: false,
   forcePush: false,
-  fix: false
+  fix: false,
+  sitePull: false,
+  sitePush: false,
+  autoUpload: false
 });
 
 // 可用的同步模块
-const availableModules = ['Page', 'View', 'Layout', 'Api', 'Code', 'Style', 'Script'];
+const availableModules = ['Page', 'View', 'Layout', 'Api', 'Code', 'Style', 'Script', 'Label'];
 
 // 配置表单验证规则
 const configRules = {
@@ -466,8 +493,7 @@ const handleDeleteClick = async (envName) => {
         if (environments.value.length > 0) {
           // 切换到第一个可用环境
           const firstEnv = environments.value[0].name;
-          currentEnv.value = firstEnv;
-          await loadConfig(firstEnv);
+          await switchEnvironment(firstEnv);
         } else {
           // 没有环境了，清空配置
           currentEnv.value = '';
@@ -476,8 +502,9 @@ const handleDeleteClick = async (envName) => {
             BASIC_AUTH_PASSWORD: '',
             API_BASE_URL: '',
             SITE_ID: '',
-            SYNC_MODULES: 'Page,View,Layout,Api,Code,Style,Script',
-            FOLDER_NAME: 'Kooboo'
+            SYNC_MODULES: defaultSyncModules,
+            FOLDER_NAME: 'Kooboo',
+            AUTO_UPLOAD: false
           });
         }
       }
@@ -525,9 +552,12 @@ const confirmAddEnv = async () => {
     BASIC_AUTH_PASSWORD: '',
     API_BASE_URL: '',
     SITE_ID: '',
-    SYNC_MODULES: 'Page,View,Layout,Api,Code,Style,Script',
-    FOLDER_NAME: 'Kooboo'
+    SYNC_MODULES: defaultSyncModules,
+    FOLDER_NAME: 'Kooboo',
+    AUTO_UPLOAD: false
   });
+
+  await window.electronAPI.setActiveEnv(name);
 
   dialogVisible.value = false;
   newEnvForm.name = '';
@@ -554,7 +584,19 @@ const loadConfig = async (env) => {
 // 切换环境
 const switchEnvironment = async (env) => {
   currentEnv.value = env;
+  await window.electronAPI.setActiveEnv(env);
   await loadConfig(env);
+};
+
+const buildConfigData = (envName) => {
+  const configData = JSON.parse(JSON.stringify(config));
+
+  if (!configData.LABEL) {
+    const env = environments.value.find(e => e.name === envName);
+    configData.LABEL = env ? env.label : envName.toUpperCase();
+  }
+
+  return configData;
 };
 
 // 保存配置
@@ -571,13 +613,7 @@ const saveConfig = async () => {
 
   // 使用 editingEnv 来保存配置，而不影响 currentEnv
   const envToSave = editingEnv.value || currentEnv.value;
-  const configData = JSON.parse(JSON.stringify(config));
-  
-  // 确保 LABEL 字段存在（如果配置中没有，使用环境的 label）
-  if (!configData.LABEL) {
-    const env = environments.value.find(e => e.name === envToSave);
-    configData.LABEL = env ? env.label : envToSave.toUpperCase();
-  }
+  const configData = buildConfigData(envToSave);
 
   const result = await window.electronAPI.saveEnvConfig(envToSave, configData);
   if (result.success) {
@@ -590,6 +626,26 @@ const saveConfig = async () => {
   } else {
     ElMessage.error(`保存失败: ${result.error}`);
   }
+};
+
+const updateAutoUpload = async (value) => {
+  if (!currentEnv.value) {
+    return;
+  }
+
+  const previousValue = !value;
+  loadingStates.autoUpload = true;
+
+  const result = await window.electronAPI.saveEnvConfig(currentEnv.value, buildConfigData(currentEnv.value));
+  if (result.success) {
+    await window.electronAPI.setActiveEnv(currentEnv.value);
+    ElMessage.success(value ? '自动上传已开启' : '自动上传已关闭');
+  } else {
+    config.AUTO_UPLOAD = previousValue;
+    ElMessage.error(`自动上传设置保存失败: ${result.error}`);
+  }
+
+  loadingStates.autoUpload = false;
 };
 
 // 选择文件夹
@@ -671,6 +727,50 @@ const executeFix = async () => {
   setTimeout(() => lastResult.value = null, 5000);
 };
 
+const executeSitePull = async () => {
+  loadingStates.sitePull = true;
+  isExecuting.value = true;
+  lastResult.value = null;
+  logs.value.push({ type: 'info', message: `开始拉取站点配置 (${currentEnvLabel.value})...` });
+
+  const result = await window.electronAPI.executeSitePull(currentEnv.value);
+
+  loadingStates.sitePull = false;
+  isExecuting.value = false;
+  if (result.success) {
+    lastResult.value = { success: true, message: '✅ 站点配置拉取完成！' };
+    ElMessage.success('站点配置拉取完成！');
+  } else {
+    lastResult.value = { success: false, message: `❌ 站点配置拉取失败: ${result.error}` };
+    logs.value.push({ type: 'error', message: result.error });
+    ElMessage.error(`站点配置拉取失败: ${result.error}`);
+  }
+
+  setTimeout(() => lastResult.value = null, 5000);
+};
+
+const executeSitePush = async () => {
+  loadingStates.sitePush = true;
+  isExecuting.value = true;
+  lastResult.value = null;
+  logs.value.push({ type: 'info', message: `开始推送站点配置 (${currentEnvLabel.value})...` });
+
+  const result = await window.electronAPI.executeSitePush(currentEnv.value);
+
+  loadingStates.sitePush = false;
+  isExecuting.value = false;
+  if (result.success) {
+    lastResult.value = { success: true, message: '✅ 站点配置推送完成！' };
+    ElMessage.success('站点配置推送完成！');
+  } else {
+    lastResult.value = { success: false, message: `❌ 站点配置推送失败: ${result.error}` };
+    logs.value.push({ type: 'error', message: result.error });
+    ElMessage.error(`站点配置推送失败: ${result.error}`);
+  }
+
+  setTimeout(() => lastResult.value = null, 5000);
+};
+
 // 清空日志
 const clearLogs = () => {
   logs.value = [];
@@ -736,8 +836,7 @@ onMounted(async () => {
   await loadEnvironments();
   // 加载第一个可用环境的配置，如果没有环境则不加载
   if (environments.value.length > 0) {
-    currentEnv.value = environments.value[0].name;
-    await loadConfig(currentEnv.value);
+    await switchEnvironment(environments.value[0].name);
   }
   window.electronAPI.onSyncLog(handleSyncLog);
 });

@@ -1,6 +1,8 @@
 import fs from 'fs';
 import { useEnv } from './utils/useEnv';
 import { fixLocalCode } from './sync/genericSync';
+import { fixLocalLabels } from './sync/labelSync';
+import { Module } from './types';
 
 export async function fixTask() {
   const { SYNC_MODULES, KOOBOO_DIR } = useEnv();
@@ -17,6 +19,10 @@ export async function fixTask() {
       fs.mkdirSync(folderPath, { recursive: true });
     }
     // 本地代码修复
-    fixLocalCode(module);
+    if (module === Module.Label) {
+      fixLocalLabels();
+    } else {
+      fixLocalCode(module);
+    }
   }
 }

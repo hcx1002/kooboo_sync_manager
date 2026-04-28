@@ -17,6 +17,7 @@
 - 环境切换：点击环境标签页
 - 配置编辑：在表单中直接修改
 - 同步操作：拉取、推送、修复
+- 自动上传：在右侧操作面板直接开关
 - 实时日志：查看执行过程
 
 ## 🚀 使用方法
@@ -42,6 +43,7 @@ pnpm run electron:build
    - **API地址**：Kooboo 服务器地址（如：`https://server.kooboo.io`）
    - **站点ID**：要同步的站点 ID（UUID 格式）
    - **同步模块**：要同步的模块列表（逗号分隔）
+   - **自动上传**：监听站点目录变化并自动上传对应模块
    - **目标文件夹**：本地同步目录路径
 3. 点击"💾 保存配置"
 
@@ -52,6 +54,8 @@ pnpm run electron:build
 - **⬆️ 推送 (Push)**：从本地上传到服务器
 - **⬆️⚡ 强制推送**：强制覆盖服务器文件
 - **🔧 修复目录**：修复本地目录结构
+- **⬇️ 站点配置拉取**：将站点 `Settings` 保存到本地 `Site/config.json`
+- **⬆️ 站点配置推送**：将本地 `Site/config.json` 推送到站点 `Settings`
 
 ### 4. **查看日志**
 
@@ -67,8 +71,9 @@ pnpm run electron:build
   "BASIC_AUTH_PASSWORD": "your-password",
   "API_BASE_URL": "https://your-server.kooboo.io",
   "SITE_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-  "SYNC_MODULES": "Page,View,Layout,Api,Code,Style,Script",
-  "FOLDER_NAME": "Kooboo"
+  "SYNC_MODULES": "Page,View,Layout,Api,Code,Style,Script,Label",
+  "FOLDER_NAME": "Kooboo",
+  "AUTO_UPLOAD": false
 }
 ```
 
@@ -106,25 +111,8 @@ pnpm run electron:build
 - **Vue 3**: UI 框架
 - **Vite 5**: 构建工具
 - **Node.js**: 后端逻辑
-- **TypeScript**: CLI 工具核心
-
-## 📝 与 CLI 工具的区别
-
-| 特性 | CLI 工具 | 桌面应用 |
-|------|---------|---------|
-| 配置位置 | 项目目录 `.env.{env}` | 应用数据目录 JSON |
-| 使用方式 | 命令行 | 图形界面 |
-| 环境切换 | 参数指定 | 点击切换 |
-| 日志查看 | 终端输出 | 可视化面板 |
-| 适用场景 | 开发者、CI/CD | 非技术人员、日常使用 |
+- **TypeScript**: 同步核心逻辑
 
 ## 🔄 与项目集成
 
 桌面应用**不依赖**项目中的 `.env` 文件，所有配置独立管理。
-
-如果需要与 CLI 工具共享配置，可以：
-1. 在桌面应用中配置环境
-2. 配置文件路径指向项目目录
-3. 使用桌面应用执行同步操作
-
-CLI 工具仍然可以独立使用原有的 `.env` 文件。

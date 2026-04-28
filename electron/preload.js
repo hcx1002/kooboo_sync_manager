@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 环境配置相关
   readEnvConfig: (env) => ipcRenderer.invoke('read-env-config', env),
+  setActiveEnv: (env) => ipcRenderer.invoke('set-active-env', env),
   saveEnvConfig: (env, config) => ipcRenderer.invoke('save-env-config', env, config),
   deleteEnvConfig: (env) => ipcRenderer.invoke('delete-env-config', env),
   getEnvList: () => ipcRenderer.invoke('get-env-list'),
@@ -18,6 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executePull: (env, force) => ipcRenderer.invoke('execute-pull', env, force),
   executePush: (env, force) => ipcRenderer.invoke('execute-push', env, force),
   executeFix: (env) => ipcRenderer.invoke('execute-fix', env),
+  executeSitePull: (env) => ipcRenderer.invoke('execute-site-pull', env),
+  executeSitePush: (env) => ipcRenderer.invoke('execute-site-push', env),
   
   // 文件选择
   selectFolder: () => ipcRenderer.invoke('select-folder'),

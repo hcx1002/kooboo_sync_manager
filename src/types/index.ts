@@ -5,7 +5,8 @@ export enum Module {
   Layout = 'Layout',
   Code = 'Code',
   Style = 'Style',
-  Script = 'Script'
+  Script = 'Script',
+  Label = 'Label'
 }
 
 export interface Metadata {

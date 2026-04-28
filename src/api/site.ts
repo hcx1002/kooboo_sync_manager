@@ -90,7 +90,7 @@ export interface Site {
   visibleAdvancedMenus: string[] | null;
   devPassword: string;
   status: "Published" | "Development" | "Auditing" | "Forbidden";
-  tinymceToolbarSettings: string; // obsolete
+  tinymceToolbarSettings: string;
   tinymceSettings: TinymceSettings;
   includePath: boolean;
   specialPath: string[] | undefined;
@@ -107,8 +107,6 @@ export interface Site {
   resourceCaches: number;
   contentFoldersSequence: string[];
 }
-
-
 
 export const get = (): Promise<{ site: Site }> =>
   apiClient.get(useUrlSiteId("Site/Get"));
