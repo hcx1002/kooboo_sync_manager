@@ -3,7 +3,6 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "baseUrl": ".",
     "rootDirs": [
       "Api",
       "Code",
@@ -11,7 +10,7 @@
     ],
     "paths": {
       "module:*": [
-        "Module/*/index.ts"
+        "./Module/*/index.ts"
       ]
     },
     "noEmit": true,
