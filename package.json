@@ -1,6 +1,6 @@
 {
   "name": "kooboo_sync_manager",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "Kooboo项目同步工具 - Electron 桌面应用",
   "author": "Kooboo Ninjible Team",
   "main": "electron/main.js",
