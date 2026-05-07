@@ -7,7 +7,6 @@ const APP_DATA_PATH = path.join(app.getPath('userData'), 'environments');
 const ENV_ORDER_PATH = path.join(app.getPath('userData'), 'environment-order.json');
 const DEFAULT_SYNC_MODULES = 'Page,View,Layout,Api,Code,Style,Script,Label';
 const AUTO_PUSH_DEBOUNCE_MS = 1200;
-const DEV_CONFIG_TEMPLATE_DIR = path.join(__dirname, 'templates', 'dev-config');
 const DEV_CONFIG_FILES = [
   'AGENTS.md',
   'kooboo.project.d.ts',
@@ -33,6 +32,7 @@ let autoPushTimer = null;
 let pendingTargets = new Map();
 let taskQueue = Promise.resolve();
 let quitPromise = null;
+const runtimeAutoUploadByEnv = new Map();
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -175,6 +175,22 @@ function sendSyncLog(type, message) {
   mainWindow?.webContents.send('sync-log', { type, message });
 }
 
+function formatErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+process.on('uncaughtException', error => {
+  const message = formatErrorMessage(error);
+  console.error('主进程未捕获异常:', error);
+  sendSyncLog('error', `主进程未捕获异常: ${message}`);
+});
+
+process.on('unhandledRejection', reason => {
+  const message = formatErrorMessage(reason);
+  console.error('主进程未处理的异步错误:', reason);
+  sendSyncLog('error', `主进程未处理的异步错误: ${message}`);
+});
+
 function normalizeEnvConfig(config = {}) {
   const apiBaseUrl = typeof config.API_BASE_URL === 'string'
     ? config.API_BASE_URL.trim().replace(/\/+$/g, '')
@@ -191,7 +207,14 @@ function normalizeEnvConfig(config = {}) {
     ...config,
     API_BASE_URL: apiBaseUrl,
     SYNC_MODULES: config.SYNC_MODULES || DEFAULT_SYNC_MODULES,
-    AUTO_UPLOAD: Boolean(config.AUTO_UPLOAD)
+    AUTO_UPLOAD: false
+  };
+}
+
+function withRuntimeAutoUpload(envName, config) {
+  return {
+    ...config,
+    AUTO_UPLOAD: Boolean(runtimeAutoUploadByEnv.get(envName))
   };
 }
 
@@ -213,6 +236,19 @@ function resolveKoobooDir(config) {
     : path.join(process.cwd(), config.FOLDER_NAME || 'Kooboo');
 }
 
+function getDevConfigTemplateDirs() {
+  const sourceDir = path.join(__dirname, 'templates', 'dev-config');
+
+  if (!app.isPackaged) {
+    return [sourceDir];
+  }
+
+  return [
+    path.join(process.resourcesPath, 'templates', 'dev-config'),
+    sourceDir
+  ];
+}
+
 function initializeDevConfig(envName) {
   const config = readEnvConfigFile(envName);
 
@@ -229,10 +265,12 @@ function initializeDevConfig(envName) {
   const skipped = [];
 
   for (const fileName of DEV_CONFIG_FILES) {
-    const sourcePath = path.join(DEV_CONFIG_TEMPLATE_DIR, fileName);
+    const sourcePath = getDevConfigTemplateDirs()
+      .map(templateDir => path.join(templateDir, fileName))
+      .find(templatePath => fs.existsSync(templatePath));
     const targetPath = path.join(targetDir, fileName);
 
-    if (!fs.existsSync(sourcePath)) {
+    if (!sourcePath) {
       throw new Error(`开发配置模板不存在: ${fileName}`);
     }
 
@@ -518,9 +556,32 @@ async function refreshWatcher() {
 
 async function setActiveEnvironment(envName) {
   activeEnvName = envName || null;
-  activeEnvConfig = activeEnvName ? readEnvConfigFile(activeEnvName, { allowMissing: true }) : null;
+  activeEnvConfig = activeEnvName
+    ? withRuntimeAutoUpload(activeEnvName, readEnvConfigFile(activeEnvName, { allowMissing: true }))
+    : null;
   await refreshWatcher();
   return { success: true };
+}
+
+async function setEnvironmentAutoUpload(envName, enabled) {
+  const config = readEnvConfigFile(envName);
+
+  if (!config) {
+    throw new Error(`环境配置不存在: ${envName}`);
+  }
+
+  if (enabled) {
+    runtimeAutoUploadByEnv.set(envName, true);
+  } else {
+    runtimeAutoUploadByEnv.delete(envName);
+  }
+
+  if (envName === activeEnvName) {
+    activeEnvConfig = withRuntimeAutoUpload(envName, config);
+    await refreshWatcher();
+  }
+
+  return { success: true, autoUpload: Boolean(enabled) };
 }
 
 function buildTaskHandler(task, options = {}) {
@@ -645,7 +706,7 @@ ipcMain.handle('read-env-config', async (_event, envName) => {
   try {
     return {
       success: true,
-      data: readEnvConfigFile(envName, { allowMissing: true })
+      data: withRuntimeAutoUpload(envName, readEnvConfigFile(envName, { allowMissing: true }))
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -670,7 +731,7 @@ ipcMain.handle('save-env-config', async (_event, envName, config) => {
     saveEnvironmentOrder(getOrderedEnvironmentNames());
 
     if (envName === activeEnvName) {
-      activeEnvConfig = normalizedConfig;
+      activeEnvConfig = withRuntimeAutoUpload(envName, normalizedConfig);
       await refreshWatcher();
     }
 
@@ -683,6 +744,7 @@ ipcMain.handle('save-env-config', async (_event, envName, config) => {
 ipcMain.handle('delete-env-config', async (_event, envName) => {
   try {
     const configPath = getEnvConfigPath(envName);
+    runtimeAutoUploadByEnv.delete(envName);
 
     if (fs.existsSync(configPath)) {
       fs.unlinkSync(configPath);
@@ -719,6 +781,14 @@ ipcMain.handle('save-env-order', async (_event, envNames) => {
       success: true,
       order: saveEnvironmentOrder(Array.isArray(envNames) ? envNames : [])
     };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('set-auto-upload', async (_event, envName, enabled) => {
+  try {
+    return await setEnvironmentAutoUpload(envName, Boolean(enabled));
   } catch (error) {
     return { success: false, error: error.message };
   }

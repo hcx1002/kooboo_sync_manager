@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteEnvConfig: (env) => ipcRenderer.invoke('delete-env-config', env),
   cloneEnvConfig: (env) => ipcRenderer.invoke('clone-env-config', env),
   saveEnvOrder: (envs) => ipcRenderer.invoke('save-env-order', envs),
+  setAutoUpload: (env, enabled) => ipcRenderer.invoke('set-auto-upload', env, enabled),
   getEnvList: () => ipcRenderer.invoke('get-env-list'),
   
   // 同步操作相关

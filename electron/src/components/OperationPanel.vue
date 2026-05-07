@@ -175,16 +175,6 @@ const log = (type, message) => {
   props.logs.push({ type, message });
 };
 
-const buildConfigData = () => {
-  const configData = JSON.parse(JSON.stringify(props.config));
-
-  if (!configData.LABEL) {
-    configData.LABEL = props.currentEnvLabel || props.currentEnv.toUpperCase();
-  }
-
-  return configData;
-};
-
 const updateAutoUpload = async (value) => {
   if (!props.currentEnv) {
     return;
@@ -194,9 +184,9 @@ const updateAutoUpload = async (value) => {
   props.config.AUTO_UPLOAD = value;
   loadingStates.autoUpload = true;
 
-  const result = await window.electronAPI.saveEnvConfig(props.currentEnv, buildConfigData());
+  const result = await window.electronAPI.setAutoUpload(props.currentEnv, value);
   if (result.success) {
-    await window.electronAPI.setActiveEnv(props.currentEnv);
+    props.config.AUTO_UPLOAD = result.autoUpload;
     ElMessage.success(value ? '自动上传已开启' : '自动上传已关闭');
   } else {
     props.config.AUTO_UPLOAD = previousValue;

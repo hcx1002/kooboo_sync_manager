@@ -73,6 +73,7 @@ export async function pushModulesTask(modules: Module[], force = false) {
 
   const totalModules = modules.length;
   let completedModules = 0;
+  const failedModules: string[] = [];
 
   console.log(`开始推送任务，共 ${totalModules} 个模块需要处理...`);
 
@@ -89,17 +90,21 @@ export async function pushModulesTask(modules: Module[], force = false) {
         console.log(`模块 ${module} 推送完成 (${completedModules}/${totalModules})`);
       } else {
         console.warn(`未知模块: ${module}，跳过处理`);
+        failedModules.push(`${module}: 未知模块`);
       }
     } catch (error) {
-      console.error(`推送模块 ${module} 时发生错误:`, error.toString());
+      const message = error instanceof Error ? error.message : String(error);
+      failedModules.push(`${module}: ${message}`);
+      console.error(`推送模块 ${module} 时发生错误:`, message);
     }
   }
 
   if (completedModules === totalModules) {
     console.log('所有模块推送完成！');
   } else {
-    console.warn(`部分模块推送失败，成功处理 ${completedModules}/${totalModules} 个模块`);
-    process.exit(1);
+    const summary = `部分模块推送失败，成功处理 ${completedModules}/${totalModules} 个模块`;
+    console.warn(summary);
+    throw new Error(`${summary}。失败模块: ${failedModules.join('; ')}`);
   }
 }
 
